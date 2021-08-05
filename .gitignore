@@ -26,3 +26,7 @@
 *.exe
 *.out
 *.app
+
+.idea/
+data/
+cmake-build-debug/
