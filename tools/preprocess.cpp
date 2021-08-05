@@ -35,11 +35,13 @@ Copyright (c) 2014-2015 Xiaowei Zhu, Tsinghua University
 #include "../core/time.hpp"
 #include "../core/atomic.hpp"
 
+using namespace std;
 long PAGESIZE = 4096;
 
 void
-generate_edge_grid(std::string input, std::string output, VertexId vertices, EdgeId edges, int partitions) {
-    int parallelism = std::thread::hardware_concurrency();
+generate_edge_grid(const string &input, const string &output, VertexId vertices, EdgeId edges,
+                   int partitions) {
+    int parallelism = thread::hardware_concurrency();
     int edge_unit;
     printf("vertices = %d, edges = %ld\n", vertices, edges);
     
@@ -49,11 +51,11 @@ generate_edge_grid(std::string input, std::string output, VertexId vertices, Edg
         buffers[i] = (char *) memalign(PAGESIZE, IOSIZE);
         occupied[i] = false;
     }
-    Queue<std::tuple<int, long> > tasks(parallelism);
-    std::fstream **fout;
-    std::mutex **mutexes;
-    fout = new std::fstream *[partitions];
-    mutexes = new std::mutex *[partitions];
+    Queue<tuple<int, long> > tasks(parallelism);
+    fstream **fout;
+    mutex **mutexes;
+    fout = new fstream *[partitions];
+    mutexes = new mutex *[partitions];
     if (file_exists(output)) {
         remove_directory(output);
     }
@@ -64,20 +66,20 @@ generate_edge_grid(std::string input, std::string output, VertexId vertices, Edg
     char ***grid_buffer = new char **[partitions];
     int **grid_buffer_offset = new int *[partitions];
     for (int i = 0; i < partitions; i++) {
-        mutexes[i] = new std::mutex[partitions];
-        fout[i] = new std::fstream[partitions];
+        mutexes[i] = new mutex[partitions];
+        fout[i] = new fstream[partitions];
         grid_buffer[i] = new char *[partitions];
         grid_buffer_offset[i] = new int[partitions];
         for (int j = 0; j < partitions; j++) {
             char filename[4096];
             sprintf(filename, "%s/block-%d-%d", output.c_str(), i, j);
-            fout[i][j].open(filename, std::fstream::app | std::fstream::out);
+            fout[i][j].open(filename, fstream::app | fstream::out);
             grid_buffer[i][j] = global_grid_buffer + (i * partitions + j) * grid_buffer_size;
             grid_buffer_offset[i][j] = 0;
         }
     }
     
-    std::vector<std::thread> threads;
+    vector<thread> threads;
     for (int ti = 0; ti < parallelism; ti++) {
         threads.emplace_back([&]() {
             char *local_buffer = (char *) memalign(PAGESIZE, IOSIZE);
@@ -88,7 +90,7 @@ generate_edge_grid(std::string input, std::string output, VertexId vertices, Edg
             while (true) {
                 int cursor;
                 long bytes;
-                std::tie(cursor, bytes) = tasks.pop();
+                tie(cursor, bytes) = tasks.pop();
                 if (cursor == -1) break;
                 memset(local_grid_offset, 0, sizeof(int) * partitions * partitions);
                 memset(local_grid_cursor, 0, sizeof(int) * partitions * partitions);
@@ -120,7 +122,7 @@ generate_edge_grid(std::string input, std::string output, VertexId vertices, Edg
                     assert(local_grid_cursor[ij] == local_grid_offset[ij]);
                     int i = ij / partitions;
                     int j = ij % partitions;
-                    std::unique_lock<std::mutex> lock(mutexes[i][j]);
+                    unique_lock<mutex> lock(mutexes[i][j]);
                     if (local_grid_offset[ij] - start > edge_unit) {
                         fout[i][j].write(local_buffer + start, local_grid_offset[ij] - start);
                     } else if (local_grid_offset[ij] - start == edge_unit) {
@@ -138,7 +140,7 @@ generate_edge_grid(std::string input, std::string output, VertexId vertices, Edg
         });
     }
     
-    std::ifstream fin;
+    ifstream fin;
     if (!fin.is_open()) printf("%s\n", strerror(errno));
     int cursor = 0;
     double start_time = get_time();
@@ -148,7 +150,7 @@ generate_edge_grid(std::string input, std::string output, VertexId vertices, Edg
         assert(bytes != -1);
         if (bytes == 0) break;
         occupied[cursor] = true;
-        tasks.push(std::make_tuple(cursor, bytes));
+        tasks.push(make_tuple(cursor, bytes));
         fflush(stdout);
         while (occupied[cursor]) {
             cursor = (cursor + 1) % (parallelism * 2);
@@ -157,7 +159,7 @@ generate_edge_grid(std::string input, std::string output, VertexId vertices, Edg
     fin.close();
     
     for (int ti = 0; ti < parallelism; ti++) {
-        tasks.push(std::make_tuple(-1, 0));
+        tasks.push(make_tuple(-1, 0));
     }
     
     for (int ti = 0; ti < parallelism; ti++) {
@@ -185,15 +187,15 @@ generate_edge_grid(std::string input, std::string output, VertexId vertices, Edg
     printf("it takes %.2f seconds to generate edge blocks\n", get_time() - start_time);
     
     long offset;
-    std::fstream fout_column;
-    fout_column.open((output + "/column").c_str(), std::fstream::app | std::fstream::out);
-    std::fstream fout_column_offset;
-    fout_column_offset.open((output + "/column_offset").c_str(), std::fstream::app | std::fstream::out);
+    fstream fout_column;
+    fout_column.open((output + "/column").c_str(), fstream::app | fstream::out);
+    fstream fout_column_offset;
+    fout_column_offset.open((output + "/column_offset").c_str(), fstream::app | fstream::out);
     offset = 0;
     for (int j = 0; j < partitions; j++) {
         for (int i = 0; i < partitions; i++) {
             fflush(stdout);
-            fout_column_offset.write(std::to_string(offset).c_str(), sizeof(offset));
+            fout_column_offset.write(to_string(offset).c_str(), sizeof(offset));
             char filename[4096];
             sprintf(filename, "%s/block-%d-%d", output.c_str(), i, j);
             offset += file_size(filename);
@@ -208,19 +210,19 @@ generate_edge_grid(std::string input, std::string output, VertexId vertices, Edg
             fin.close();
         }
     }
-    fout_column_offset.write(std::to_string(offset).c_str(), sizeof(offset));
+    fout_column_offset.write(to_string(offset).c_str(), sizeof(offset));
     fout_column_offset.close();
     fout_column.close();
     printf("column oriented grid generated\n");
-    std::fstream fout_row;
-    fout_row.open((output + "/row").c_str(), std::fstream::app | std::fstream::out);
-    std::fstream fout_row_offset;
-    fout_row_offset.open((output + "/row_offset").c_str(), std::fstream::app | std::fstream::out);
+    fstream fout_row;
+    fout_row.open((output + "/row").c_str(), fstream::app | fstream::out);
+    fstream fout_row_offset;
+    fout_row_offset.open((output + "/row_offset").c_str(), fstream::app | fstream::out);
     offset = 0;
     for (int i = 0; i < partitions; i++) {
         for (int j = 0; j < partitions; j++) {
             fflush(stdout);
-            fout_row_offset.write(std::to_string(offset).c_str(), sizeof(offset));
+            fout_row_offset.write(to_string(offset).c_str(), sizeof(offset));
             char filename[4096];
             sprintf(filename, "%s/block-%d-%d", output.c_str(), i, j);
             offset += file_size(filename);
@@ -235,7 +237,7 @@ generate_edge_grid(std::string input, std::string output, VertexId vertices, Edg
             fin.close();
         }
     }
-    fout_row_offset.write(std::to_string(offset).c_str(), sizeof(offset));
+    fout_row_offset.write(to_string(offset).c_str(), sizeof(offset));
     fout_row_offset.close();
     fout_row.close();
     printf("row oriented grid generated\n");
@@ -249,8 +251,8 @@ generate_edge_grid(std::string input, std::string output, VertexId vertices, Edg
 
 int main(int argc, char **argv) {
     int opt;
-    std::string input = "";
-    std::string output = "";
+    string input;
+    string output;
     EdgeId edges = 68993773;
     VertexId vertices = -1;
     int partitions = -1;
@@ -273,7 +275,7 @@ int main(int argc, char **argv) {
                 break;
         }
     }
-    if (input == "" || output == "" || vertices == -1) {
+    if (input.empty() || output.empty() || vertices == -1) {
         fprintf(stderr,
                 "usage: %s -i [input path] -o [output path] -v [vertices] -p [partitions] -t [edge type: 0=unweighted, 1=weighted]\n",
                 argv[0]);
